@@ -5,23 +5,23 @@ program as;
 
 type
  TMEM = array[0..0] of byte;
- THandleBMP = RECORD {Naglowek pliku BMP}
-   bfType          :Word;    {Sygnatura pliku BMP: 4D42h ("BM")}
-   bfSize          :LongInt; {Dlugosc calego pliku}
-   bfRes1          :Word;    {Olac, pisac 0}
-   bfRes2          :Word;    {Olac, pisac 0}
-   bfOffBits       :LongInt; {Pozycja rysunku w pliku (= Dlug.naglowka + Dlug.palety)}
-   biSize          :LongInt; {Dlugosc stad do konca naglowka: 40, czasem mniej}
-   biWidth         :LongInt; {Szerokosc obrazka}
-   biHeight        :LongInt; {Wysokosc obrazka}
-   biPlanes        :Word;    {Musi byc 1}
-   biBitCount      :Word;    {Liczba bitow na piksel (1, 4, 8, 24)}
-   biCompression   :LongInt; {Algorytm kompresji: 0 = zaden, 1,2 = RLE}
-   biSizeImage     :LongInt; {Wielkosc samego rysunku}
-   biXPelsPerMeter :LongInt; {Rozdzielczosc pozioma}
-   biYPelsPerMeter :LongInt; {Rozdzielczosc pionowa}
-   biClrUsed       :LongInt; {Liczba kolorow w palecie}
-   biClrImportant  :LongInt; {Olac, pisac 0}
+ THandleBMP = RECORD { BMP structure }
+   bfType          :Word;    {BMP file signature 4D42h ("BM")}
+   bfSize          :LongInt; {file length}
+   bfRes1          :Word;    { reserved => 0}
+   bfRes2          :Word;    { reserved => 0}
+   bfOffBits       :LongInt; { Image position in file (= header length + palette length )}
+   biSize          :LongInt; { distance from this position to end of header usually 40, sometime less}
+   biWidth         :LongInt; { Image width }
+   biHeight        :LongInt; { image height }
+   biPlanes        :Word;    { No of planes, must be 1}
+   biBitCount      :Word;    { bit per pixel (1, 4, 8, 24)}
+   biCompression   :LongInt; { Compression method : 0 = none, 1,2 = RLE}
+   biSizeImage     :LongInt; { Size of image }
+   biXPelsPerMeter :LongInt; { dpi X}
+   biYPelsPerMeter :LongInt; { dpi Y}
+   biClrUsed       :LongInt; { Colour count in palette }
+   biClrImportant  :LongInt; { just set to 0 }
  END;
 
 var
@@ -30,37 +30,38 @@ var
  segm :word;
  segmb:word;
  i,j:integer;
- kolko:^tmem;
- kolos:word;
+ light:^tmem;
+ lightSeg:word;
  PozX,PozY:integer;
  arg1,arg2:real;
 
 PROCEDURE SetCol(c,r,g,b:byte);
 BEGIN
- port[$3c8]:=c; {Numer koloru}
- port[$3c9]:=r; {Wartosc RED}
- port[$3c9]:=g; {Wartosc GREEN}
- port[$3c9]:=b; {Wartosc BLUE}
+ port[$3c8]:=c; { color no i palette }
+ port[$3c9]:=r; { RED}
+ port[$3c9]:=g; { GREEN}
+ port[$3c9]:=b; { BLUE}
 END;
 
-procedure LoadBmp;
+procedure LoadBmp; { this method load only 320x200 bitmap with 256 colours palette }
 VAR
- PlikBmp   :FILE;       {Zmienna plikowa}
- Pal       :ARRAY[0..4*256-1] OF Byte; {Tablica zawierajaca palete kolorow}
- b         :Integer;    {Zmienna pomocnicza}
- p         :Pointer;    {Zmienna pomocnicza}
- HandleBmp :THandleBMP; {Naglowek pliku BMP}
+ PlikBmp   :FILE;       { File handler }
+ Pal       :ARRAY[0..4*256-1] OF Byte; { tab contains palette definition, contains
+                                          256 colours(for bytes for each colour ARGB ) }
+ b         :Integer;    
+ p         :Pointer;    
+ HandleBmp :THandleBMP; { File header }
 BEGIN
-Assign(PlikBmp,'hmap.bmp');
+Assign(PlikBmp,'hmap.bmp');  
  Reset(PlikBmp,1);
-  BlockRead(PlikBmp,HandleBMP,SizeOf(HandleBMP)); 
-   getMem(BITMAP,64000);
-   BlockRead(PlikBmp,Pal,SizeOf(Pal));
+  BlockRead(PlikBmp,HandleBMP,SizeOf(HandleBMP));  { load header }
+   getMem(BITMAP,64000); 	            { alloc memory 320x200 => 64000 }
+   BlockRead(PlikBmp,Pal,SizeOf(Pal));  { load full palette }
  FOR b:=0 TO 255 DO
-   setCol(b,Pal[b*4+2] DIV 4,Pal[b*4+1] DIV 4,Pal[b*4+0] DIV 4);
+   setCol(b,Pal[b*4+2] DIV 4,Pal[b*4+1] DIV 4,Pal[b*4+0] DIV 4);  { set palette }
 
-GetMem(p,320);
- FOR b:=199 DOWNTO 0 DO BEGIN
+   GetMem(p,320);   { alloc scanline  }
+ FOR b:=199 DOWNTO 0 DO BEGIN   { image in bmp is stored upside down so position counter from up value to down }
   BlockRead(PlikBmp,p^,320);
   Move(p^, BITMAP^[b*320], 320);
  END;
@@ -68,7 +69,7 @@ FreeMem(p,320);
 Close(PlikBmp);
 END;
 
-procedure GetKolko;
+procedure GetLight;
 var
    dist:word;
  begin
@@ -78,7 +79,7 @@ var
     dist:= round(4*sqrt(sqr(i-64)+sqr(j-64)));
     if dist>255 then dist:=255;
     dist:=255-dist;
-    kolko^[j*128+i]:=byte(dist);
+    light^[j*128+i]:=byte(dist);
    end;
  end;
 
@@ -166,7 +167,7 @@ var tx1,ty1:integer;
         mov si,tx1
         add si,64
         add si,ax
-        mov ax,kolos
+        mov ax, lightSeg
         push ds
          mov ds,ax
          movsb
@@ -197,13 +198,13 @@ begin
   mov ax,0013h
   int 10h
  end;
- GetMem(kolko,128*128);
- GetMem(BUFOR,64000);
+ GetMem(light, 128*128);
+ GetMem(BUFOR,   64000);
  LoadBmp;
  Segm :=seg(BITMAP^[0]);
  Segmb:=seg(BUFOR ^[0]);
- kolos:=seg(KOLKO ^[0]);
- GetKolko;
+ lightSeg:=seg(light ^[0]);
+ GetLight;
  arg2:=0;
  arg1:=0;
  repeat
@@ -233,5 +234,5 @@ begin
  end;
  FreeMem(BITMAP,64000);
  FreeMem(BUFOR ,64000);
- FreeMem(kolko,128*128);
+ FreeMem(light,128*128);
 end.
